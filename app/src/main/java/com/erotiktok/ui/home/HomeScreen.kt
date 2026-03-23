@@ -175,21 +175,29 @@ fun HomeScreen(
             }
         }
 
-        // Tab 内容 - 使用当前选中的 ViewModel 和 GridState
-        val currentVideos = currentViewModel.videos.collectAsState().value
-        println("[HomeScreen] 传递给 TabContent: selectedTab=$selectedTab, viewModel.tabType=${currentViewModel.tabTypeName}, videos.size=${currentVideos.size}")
-        TabContent(
-            viewModel = currentViewModel,
-            gridState = currentGridState,
-            viewModelKey = selectedTab.name,
-            videos = currentVideos,
-            isLoading = currentViewModel.isLoading.collectAsState().value,
-            isLoadingMore = currentViewModel.isLoadingMore.collectAsState().value,
-            hasMore = currentViewModel.hasMore.collectAsState().value,
-            isRefreshing = currentViewModel.isRefreshing.collectAsState().value,
-            error = currentViewModel.error.collectAsState().value,
-            onVideoClick = onVideoClick
-        )
+        // Tab 内容 - 切换 Tab 时重建收集状态，避免上一 Tab 的瞬时旧数据串到当前 Tab
+        key(selectedTab) {
+            val currentVideos = currentViewModel.videos.collectAsState().value
+            val isLoading = currentViewModel.isLoading.collectAsState().value
+            val isLoadingMore = currentViewModel.isLoadingMore.collectAsState().value
+            val hasMore = currentViewModel.hasMore.collectAsState().value
+            val isRefreshing = currentViewModel.isRefreshing.collectAsState().value
+            val error = currentViewModel.error.collectAsState().value
+
+            println("[HomeScreen] 传递给 TabContent: selectedTab=$selectedTab, viewModel.tabType=${currentViewModel.tabTypeName}, videos.size=${currentVideos.size}")
+            TabContent(
+                viewModel = currentViewModel,
+                gridState = currentGridState,
+                viewModelKey = selectedTab.name,
+                videos = currentVideos,
+                isLoading = isLoading,
+                isLoadingMore = isLoadingMore,
+                hasMore = hasMore,
+                isRefreshing = isRefreshing,
+                error = error,
+                onVideoClick = onVideoClick
+            )
+        }
     }
     println("===== [首页] HomeScreen 渲染完毕 =====")
 }
@@ -236,25 +244,31 @@ fun TabContent(
 
     println("[滚动位置] TabContent: viewModel.tabType=${viewModel.tabTypeName}, isFirstLoad=$isFirstLoad, savedIndex=$savedIndex, savedOffset=$savedOffset")
 
-    // 首次加载滚动到顶部，否则恢复之前的位置
-    LaunchedEffect(videos, isFirstLoad) {
+    // 只在当前 Tab 首次显示出列表内容时恢复一次滚动位置，避免加载更多后跳回旧位置
+    var hasAppliedInitialScroll by remember(viewModelKey) { mutableStateOf(false) }
+
+    LaunchedEffect(viewModelKey, videos.isNotEmpty(), isFirstLoad) {
+        if (hasAppliedInitialScroll || videos.isEmpty()) {
+            return@LaunchedEffect
+        }
+
         // 直接从 StateFlow 读取当前值
         val currentSavedIndex = viewModel.firstVisibleItemIndex.value
         val currentSavedOffset = viewModel.scrollOffset.value
         val currentIsFirstLoad = viewModel.isFirstLoad.value
 
-        println("[滚动位置] LaunchedEffect: isFirstLoad=$currentIsFirstLoad, savedIndex=$currentSavedIndex, savedOffset=$currentSavedOffset")
-        if (videos.isNotEmpty()) {
-            if (currentIsFirstLoad) {
-                // 初次加载，滚动到顶部
-                println("[滚动位置] 滚动到顶部")
-                gridState.scrollToItem(0, 0)
-            } else if (currentSavedIndex > 0) {
-                // 非初次加载，恢复之前的位置
-                println("[滚动位置] 恢复位置: index=$currentSavedIndex, offset=$currentSavedOffset")
-                gridState.scrollToItem(currentSavedIndex, currentSavedOffset)
-            }
+        println("[滚动位置] 初次应用滚动位置: isFirstLoad=$currentIsFirstLoad, savedIndex=$currentSavedIndex, savedOffset=$currentSavedOffset")
+        if (currentIsFirstLoad) {
+            // 初次加载，滚动到顶部
+            println("[滚动位置] 滚动到顶部")
+            gridState.scrollToItem(0, 0)
+        } else if (currentSavedIndex > 0 || currentSavedOffset > 0) {
+            // 非初次加载，恢复之前的位置
+            println("[滚动位置] 恢复位置: index=$currentSavedIndex, offset=$currentSavedOffset")
+            gridState.scrollToItem(currentSavedIndex, currentSavedOffset)
         }
+
+        hasAppliedInitialScroll = true
     }
 
     // 底部加载检测
