@@ -158,12 +158,11 @@ class PlayerViewModel : ViewModel() {
             _playerState.value = state.copy(
                 currentIndex = newIndex,
                 currentVideo = nextVideo,
-                isLoading = true,  // 始终显示loading，确保显示缩略图
-                currentVideoUrl = null,  // 先清空URL
-                nextVideoUrl = null,  // 清空预加载
+                isLoading = true,
+                nextVideoUrl = null,
                 progress = 0f,
                 currentPosition = 0L,
-                isPlaying = true  // 切换后自动播放
+                isPlaying = true
             )
 
             // 设置视频URL（延迟设置loading为false）
@@ -189,10 +188,9 @@ class PlayerViewModel : ViewModel() {
                 currentIndex = newIndex,
                 currentVideo = state.videoList[newIndex],
                 isLoading = true,
-                currentVideoUrl = null,
                 progress = 0f,
                 currentPosition = 0L,
-                isPlaying = true  // 切换后自动播放
+                isPlaying = true
             )
             resolveCurrentVideoUrl()
         }
@@ -208,7 +206,6 @@ class PlayerViewModel : ViewModel() {
                 currentIndex = index,
                 currentVideo = state.videoList[index],
                 isLoading = true,
-                currentVideoUrl = null,
                 progress = 0f,
                 currentPosition = 0L
             )
@@ -230,6 +227,10 @@ class PlayerViewModel : ViewModel() {
         _playerState.value = _playerState.value.copy(
             isPlaying = !_playerState.value.isPlaying
         )
+    }
+
+    fun pausePlayback() {
+        _playerState.value = _playerState.value.copy(isPlaying = false)
     }
 
     /**

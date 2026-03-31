@@ -3,6 +3,7 @@ package com.erotiktok.ui.home
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -30,14 +32,12 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
@@ -45,20 +45,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -80,7 +81,7 @@ fun println(message: String) {
     Log.d("APP", message)
 }
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.material.ExperimentalMaterialApi::class)
+@OptIn(androidx.compose.material.ExperimentalMaterialApi::class)
 @Composable
 fun HomeScreen(
     selectedTab: VideoTab,
@@ -88,6 +89,8 @@ fun HomeScreen(
     viewModelNEW: HomeViewModel,
     viewModelWEEK: HomeViewModel,
     viewModelMONTH: HomeViewModel,
+    allowBackgroundPlayback: Boolean,
+    onAllowBackgroundPlaybackChange: (Boolean) -> Unit,
     onVideoClick: (List<Video>, Int) -> Unit,
     onSaveScrollPosition: (Int, Int) -> Unit
 ) {
@@ -112,57 +115,85 @@ fun HomeScreen(
 
     println("[首页] selectedTab=$selectedTab, currentViewModel=$currentViewModel")
 
+    val tabs = VideoTab.entries
+    val selectedTabIndex = tabs.indexOf(selectedTab)
+    val density = LocalDensity.current
+    val tabSwipeThresholdPx = remember(density) { with(density) { 64.dp.toPx() } }
+
+    fun switchToTab(targetIndex: Int) {
+        if (targetIndex == selectedTabIndex || targetIndex !in tabs.indices) {
+            return
+        }
+
+        val saveIndex = currentGridState.firstVisibleItemIndex
+        val saveOffset = currentGridState.firstVisibleItemScrollOffset
+        val targetTab = tabs[targetIndex]
+        println("[滚动位置] HomeScreen Tab切换: $selectedTab -> $targetTab, 保存位置: index=$saveIndex, offset=$saveOffset")
+        onSaveScrollPosition(saveIndex, saveOffset)
+        onTabSelected(targetTab)
+    }
+
+    var horizontalDragOffset by remember(selectedTab) { mutableFloatStateOf(0f) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(BackgroundBlack)
-    ) {
-        // 顶部标题栏
-        TopAppBar(
-            title = {
-                Text(
-                    text = "EroTikTok",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+            .pointerInput(selectedTab) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, dragAmount ->
+                        horizontalDragOffset += dragAmount
+                    },
+                    onDragEnd = {
+                        when {
+                            horizontalDragOffset > tabSwipeThresholdPx -> switchToTab(selectedTabIndex - 1)
+                            horizontalDragOffset < -tabSwipeThresholdPx -> switchToTab(selectedTabIndex + 1)
+                        }
+                        horizontalDragOffset = 0f
+                    },
+                    onDragCancel = {
+                        horizontalDragOffset = 0f
+                    }
                 )
-            },
-            actions = {
-                IconButton(onClick = { currentViewModel.refresh() }) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "刷新",
-                        tint = Color.White
-                    )
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = SurfaceDark
-            )
+            }
+    ) {
+        Spacer(
+            modifier = Modifier
+                .statusBarsPadding()
+                .background(SurfaceDark)
         )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SurfaceDark)
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "后台播放",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Switch(
+                checked = allowBackgroundPlayback,
+                onCheckedChange = onAllowBackgroundPlaybackChange
+            )
+        }
 
         // 分类标签
         TabRow(
-            selectedTabIndex = VideoTab.entries.indexOf(selectedTab),
+            selectedTabIndex = selectedTabIndex,
             containerColor = SurfaceDark,
             contentColor = Color.White,
             divider = {}
         ) {
-            VideoTab.entries.forEachIndexed { _, tab ->
+            tabs.forEachIndexed { index, tab ->
                 Tab(
                     selected = selectedTab == tab,
-                    onClick = {
-                        // 切换前保存当前 Tab 的滚动位置
-                        val currentGridState = when (selectedTab) {
-                            VideoTab.NEW -> gridStateNEW
-                            VideoTab.WEEK -> gridStateWEEK
-                            VideoTab.MONTH -> gridStateMONTH
-                        }
-                        val saveIndex = currentGridState.firstVisibleItemIndex
-                        val saveOffset = currentGridState.firstVisibleItemScrollOffset
-                        println("[滚动位置] HomeScreen Tab切换: $selectedTab -> $tab, 保存位置: index=$saveIndex, offset=$saveOffset")
-                        onSaveScrollPosition(saveIndex, saveOffset)
-                        onTabSelected(tab)
-                    },
+                    onClick = { switchToTab(index) },
                     modifier = Modifier.weight(1f),
                     text = {
                         Text(
@@ -195,14 +226,20 @@ fun HomeScreen(
                 hasMore = hasMore,
                 isRefreshing = isRefreshing,
                 error = error,
-                onVideoClick = onVideoClick
+                onVideoClick = { videos, index ->
+                    val saveIndex = currentGridState.firstVisibleItemIndex
+                    val saveOffset = currentGridState.firstVisibleItemScrollOffset
+                    println("[滚动位置] HomeScreen 点击视频: tab=$selectedTab, 保存位置: index=$saveIndex, offset=$saveOffset")
+                    onSaveScrollPosition(saveIndex, saveOffset)
+                    onVideoClick(videos, index)
+                }
             )
         }
     }
     println("===== [首页] HomeScreen 渲染完毕 =====")
 }
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.material.ExperimentalMaterialApi::class)
+@OptIn(androidx.compose.material.ExperimentalMaterialApi::class)
 @Composable
 fun TabContent(
     viewModel: HomeViewModel,
@@ -287,8 +324,9 @@ fun TabContent(
         }
     }
 
+    val showPullRefreshIndicator = isRefreshing && videos.isNotEmpty()
     val pullRefreshState = rememberPullRefreshState(
-        refreshing = isRefreshing,
+        refreshing = showPullRefreshIndicator,
         onRefresh = { viewModel.refresh() }
     )
 
@@ -355,13 +393,15 @@ fun TabContent(
             }
         }
 
-        PullRefreshIndicator(
-            refreshing = isRefreshing,
-            state = pullRefreshState,
-            modifier = Modifier.align(Alignment.TopCenter),
-            backgroundColor = SurfaceDark,
-            contentColor = PrimaryCyan
-        )
+        if (showPullRefreshIndicator) {
+            PullRefreshIndicator(
+                refreshing = true,
+                state = pullRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter),
+                backgroundColor = SurfaceDark,
+                contentColor = PrimaryCyan
+            )
+        }
     }
 }
 

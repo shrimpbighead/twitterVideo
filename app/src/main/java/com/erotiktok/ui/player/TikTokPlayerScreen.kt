@@ -1,5 +1,6 @@
 package com.erotiktok.ui.player
 
+import android.graphics.Color as AndroidColor
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
@@ -46,7 +47,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
@@ -56,6 +60,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,13 +93,23 @@ import androidx.activity.compose.BackHandler
 fun TikTokPlayerScreen(
     videos: List<Video>,
     startIndex: Int = 0,
+    allowBackgroundPlayback: Boolean,
     onBack: () -> Unit,
     viewModel: PlayerViewModel = viewModel()
 ) {
     val playerState by viewModel.playerState.collectAsState()
     val context = LocalContext.current
+    val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var showControls by remember { mutableStateOf(true) }
+
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
 
     LaunchedEffect(showControls, playerState.isPlaying) {
         if (playerState.isPlaying && showControls) {
@@ -106,6 +121,18 @@ fun TikTokPlayerScreen(
     // 处理系统返回手势
     BackHandler(enabled = true) {
         onBack()
+    }
+
+    DisposableEffect(lifecycleOwner, allowBackgroundPlayback) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && !allowBackgroundPlayback && viewModel.playerState.value.isPlaying) {
+                viewModel.pausePlayback()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     // 创建缓存和DataSource
@@ -443,8 +470,8 @@ fun VideoPlayer(
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
-        // 视频加载中或切换视频时显示缩略图（始终显示，直到视频开始播放）
-        if (thumbnail != null && isLoading) {
+        // 视频加载中或切换视频时显示缩略图，避免切换瞬间黑屏
+        if (thumbnail != null) {
             AsyncImage(
                 model = thumbnail,
                 contentDescription = null,
@@ -483,6 +510,8 @@ fun VideoPlayer(
                 PlayerView(context).apply {
                     player = exoPlayer
                     useController = false
+                    setShutterBackgroundColor(AndroidColor.TRANSPARENT)
+                    setKeepContentOnPlayerReset(true)
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 }

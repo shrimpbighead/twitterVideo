@@ -1,12 +1,16 @@
 package com.erotiktok.ui.navigation
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.erotiktok.data.model.Video
 import com.erotiktok.ui.home.HomeScreen
@@ -22,8 +26,22 @@ import com.erotiktok.ui.player.TikTokPlayerScreen
 fun EroTikHost() {
     println("===== [导航] EroTikHost 开始执行 =====")
 
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+    }
+    var allowBackgroundPlayback by rememberSaveable {
+        mutableStateOf(preferences.getBoolean("allow_background_playback", false))
+    }
+
+    LaunchedEffect(allowBackgroundPlayback) {
+        preferences.edit()
+            .putBoolean("allow_background_playback", allowBackgroundPlayback)
+            .apply()
+    }
+
     var showPlayer by rememberSaveable { mutableStateOf(false) }
-    var playerVideos by rememberSaveable { mutableStateOf<List<Video>>(emptyList()) }
+    var playerVideos by remember { mutableStateOf<List<Video>>(emptyList()) }
     var playerStartIndex by rememberSaveable { mutableIntStateOf(0) }
 
     // 提升 Tab 状态到导航层，确保播放页返回时保持状态
@@ -43,6 +61,7 @@ fun EroTikHost() {
         TikTokPlayerScreen(
             videos = playerVideos,
             startIndex = playerStartIndex,
+            allowBackgroundPlayback = allowBackgroundPlayback,
             onBack = {
                 println("[导航] 点击返回按钮，设置 showPlayer = false")
                 showPlayer = false
@@ -56,6 +75,8 @@ fun EroTikHost() {
             viewModelNEW = viewModelNEW,
             viewModelWEEK = viewModelWEEK,
             viewModelMONTH = viewModelMONTH,
+            allowBackgroundPlayback = allowBackgroundPlayback,
+            onAllowBackgroundPlaybackChange = { allowBackgroundPlayback = it },
             onVideoClick = { videos, startIndex ->
                 println("[导航] 点击视频: videos=${videos.size}, startIndex=$startIndex")
                 playerVideos = videos
